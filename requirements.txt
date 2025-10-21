@@ -1,0 +1,4 @@
+click>=8.1.7
+jupyterlab-pygments>=0.1.2
+markdown2>= 2.5.4
+psutil>=5.9.0

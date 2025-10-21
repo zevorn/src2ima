@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ repo_name }} - GitHub 源码 HTML 导航</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .repo-title {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .tree-node {
+            margin-left: 15px;
+        }
+        .dir-name {
+            font-weight: bold;
+            color: #0d6efd;
+        }
+        .file-name {
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body class="container mt-4 mb-5">
+    <!-- 仓库标题 -->
+    <div class="repo-title">
+        <h2>📁 {{ repo_name }} 源码目录</h2>
+        <p class="text-muted">点击文件名查看 HTML 预览</p>
+    </div>
+
+    <!-- 目录树（递归渲染） -->
+    <div class="tree-root">
+        {% macro render_tree(node, depth=0) %}
+            {% for key, value in node.items() %}
+                {% if key == "__files__" %}
+                    <!-- 渲染当前目录下的文件 -->
+                    {% for file in value %}
+                        <div class="tree-node" style="margin-left: {{ depth * 15 }}px;">
+                            <a href="{{ file.html_url }}" class="file-name">
+                                📄 {{ file.name }}
+                            </a>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <!-- 渲染子目录 -->
+                    <div class="tree-node" style="margin-left: {{ depth * 15 }}px;">
+                        <div class="dir-name">
+                            📂 {{ key }}
+                        </div>
+                        <!-- 递归渲染子目录内容 -->
+                        {{ render_tree(value, depth + 1) }}
+                    </div>
+                {% endif %}
+            {% endfor %}
+        {% endmacro %}
+
+        {{ render_tree(file_tree) }}
+    </div>
+</body>
+</html>
