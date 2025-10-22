@@ -168,6 +168,62 @@ def shorten_long_path(original_path, max_length, output_format):
     return os.path.join(dir_name, new_file_name)
 
 
+def process_single_file_to_content(file_path, repo_root, formatter, output_format):
+    """Process single file and return content string (for single file mode)"""
+    try:
+        # Skip oversized files
+        file_size = os.path.getsize(file_path)
+        if file_size > MAX_FILE_SIZE:
+            rel_path = os.path.relpath(file_path, repo_root)
+            return (False, f"⏭️  Skip oversized file ({file_size//1024//1024}MB): {rel_path}", None)
+
+        # Get relative path
+        rel_path = os.path.relpath(file_path, repo_root)
+
+        # Check if should be ignored
+        if should_ignore(rel_path) or should_ignore(file_path):
+            if is_binary_file(file_path):
+                return (False, f"🔇 Ignore binary file: {rel_path}", None)
+            else:
+                return (False, f"🔇 Ignore file: {rel_path}", None)
+
+        # Read file content
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            with open(file_path, 'r', encoding='latin-1') as f:
+                content = f.read()
+
+        # Process content - only support Markdown format
+        ext = os.path.splitext(file_path)[1].lower()
+        file_ext = ext.lstrip('.') if ext else 'txt'
+
+        if ext == ".md":
+            final_content = f"## {rel_path}\n\n{content}\n\n---\n\n"
+        else:
+            # Generate Markdown code block
+            try:
+                lexer = get_lexer_for_filename(file_path)
+                lexer_name = lexer.aliases[0] if lexer.aliases else lexer.name.lower()
+            except Exception:
+                try:
+                    lexer = get_lexer_by_name(file_ext)
+                    lexer_name = file_ext
+                except Exception:
+                    lexer_name = 'text'
+
+            # Escape backticks in code
+            escaped_content = content.replace('`', '\\`')
+            final_content = f"## {rel_path}\n\n```{lexer_name}\n{escaped_content}\n```\n\n---\n\n"
+
+        return (True, f"🟢 Processed: {rel_path}", final_content)
+
+    except Exception as e:
+        rel_path = os.path.relpath(file_path, repo_root)
+        return (False, f"❌ Processing failed {rel_path}: {str(e)[:50]}", None)
+
+
 def process_single_file(file_path, repo_root, output_dir, formatter, output_format):
     """Process single file and convert to specified format, preserve original extension and limit directory depth"""
     try:
@@ -240,7 +296,7 @@ def process_single_file(file_path, repo_root, output_dir, formatter, output_form
         else:  # output_format == 'md'
             if ext == ".md":
                 # Markdown file preserves original extension, add .md suffix
-                final_content = f"# {rel_path}\n\n{content}"
+                final_content = f"## {rel_path}\n\n{content}"
             else:
                 # Manually generate Markdown code blocks
                 try:
@@ -256,7 +312,7 @@ def process_single_file(file_path, repo_root, output_dir, formatter, output_form
 
                 # Escape backticks in code
                 escaped_content = content.replace('`', '\\`')
-                final_content = f"# {rel_path}\n\n``` {lexer_name}\n{escaped_content}\n```\n"
+                final_content = f"## {rel_path}\n\n``` {lexer_name}\n{escaped_content}\n```\n"
 
         # Write output file
         with open(output_path, "w", encoding="utf-8") as f:
@@ -401,7 +457,9 @@ def generate_index(repo_root, output_dir, repo_name, files_to_process, output_fo
 @click.option("--max-file-size", default=MAX_FILE_SIZE//1024//1024, help="Maximum file size to skip (MB), default 10")
 @click.option("--max-depth", default=MAX_DIRECTORY_DEPTH, type=int,
               help=f"Maximum directory depth, beyond which will be flattened, default {MAX_DIRECTORY_DEPTH}")
-def main(local_repo, output_dir, output_format, ignore, highlight_theme, batch_size, max_workers, max_file_size, max_depth):
+@click.option("--single-file", is_flag=True, help="Merge all code into a single Markdown file")
+@click.option("--force", "-f", is_flag=True, help="Force delete output directory without confirmation")
+def main(local_repo, output_dir, output_format, ignore, highlight_theme, batch_size, max_workers, max_file_size, max_depth, single_file, force):
     """Multi-threaded batch processing source code conversion tool, supports limiting maximum directory depth"""
     # Global configuration update
     global HIGHLIGHT_THEME, IGNORE_PATTERNS, BATCH_SIZE, MAX_FILE_SIZE, MAX_WORKERS, MAX_DIRECTORY_DEPTH
@@ -412,21 +470,36 @@ def main(local_repo, output_dir, output_format, ignore, highlight_theme, batch_s
     MAX_WORKERS = max_workers if max_workers is not None else os.cpu_count() * \
         2  # Default CPU cores * 2
     MAX_DIRECTORY_DEPTH = max_depth
+
+    # 单文件模式下强制使用 Markdown 格式
+    if single_file and output_format != 'md':
+        click.echo("⚠️  Single file mode only supports Markdown format, automatically switching to md")
+        output_format = 'md'
+
     click.echo(
         f"🔧 Configuration: Process {batch_size} files per batch, using {MAX_WORKERS} worker threads, maximum directory depth {MAX_DIRECTORY_DEPTH}")
+    if single_file:
+        click.echo("📄 Mode: Merge all code into a single Markdown file")
 
     # Validate repository path
     try:
         repo_path, repo_name = validate_local_repo(local_repo)
         click.echo(f"✅ Repository validated: {repo_path}")
     except Exception as e:
-        click.error(f"❌ Repository validation failed: {e}")
+        click.echo(f"❌ Repository validation failed: {e}")
         return
 
     # Prepare output directory
     if os.path.exists(output_dir):
-        click.echo(f"🧹 Cleaning old output directory: {output_dir}")
-        shutil.rmtree(output_dir, ignore_errors=True)
+        if force:
+            click.echo(f"🧹 Force cleaning old output directory: {output_dir}")
+            shutil.rmtree(output_dir, ignore_errors=True)
+        elif click.confirm(f"⚠️  Output directory already exists: {output_dir}\nDo you want to delete it and continue?"):
+            click.echo(f"🧹 Cleaning old output directory: {output_dir}")
+            shutil.rmtree(output_dir, ignore_errors=True)
+        else:
+            click.echo("❌ Operation cancelled by user")
+            return
     os.makedirs(output_dir, exist_ok=True)
 
     # Collect all files to process
@@ -437,59 +510,111 @@ def main(local_repo, output_dir, output_format, ignore, highlight_theme, batch_s
         return
 
     # Batch process files (multi-threaded)
-    click.echo(
-        f"\n📄 Starting file processing ({batch_size} files per batch, {MAX_WORKERS} threads parallel, output {output_format} format)...")
     formatter = get_safe_formatter(highlight_theme, output_format)
     processed_count = 0
     total_files = len(files_to_process)
 
-    # Create partial function, fix common parameters
-    process_func = partial(
-        process_single_file,
-        repo_root=repo_path,
-        output_dir=output_dir,
-        formatter=formatter,
-        output_format=output_format
-    )
+    if single_file:
+        # 单文件模式：收集所有内容到一个文件
+        click.echo(f"\n📄 Starting file processing (single file mode, {MAX_WORKERS} threads parallel)...")
+        all_contents = []
 
-    for i in range(0, total_files, batch_size):
-        # Check memory usage
-        wait_for_memory()
+        # Create partial function for single file mode
+        process_func = partial(
+            process_single_file_to_content,
+            repo_root=repo_path,
+            formatter=formatter,
+            output_format='md'
+        )
 
-        # Get current batch files
-        batch_files = files_to_process[i:i+batch_size]
-        batch_num = i // batch_size + 1
-        click.echo(f"\n📦 Processing batch {batch_num} ({len(batch_files)} files total)")
+        for i in range(0, total_files, batch_size):
+            wait_for_memory()
+            batch_files = files_to_process[i:i+batch_size]
+            batch_num = i // batch_size + 1
+            click.echo(f"\n📦 Processing batch {batch_num} ({len(batch_files)} files total)")
 
-        # Use thread pool to process current batch files in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            # Submit all tasks
-            futures = [executor.submit(process_func, file_path)
-                       for file_path in batch_files]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                futures = [executor.submit(process_func, file_path) for file_path in batch_files]
 
-            # Process results
-            for future in concurrent.futures.as_completed(futures):
-                success, message = future.result()
-                click.echo(message)
-                if success:
-                    processed_count += 1
+                for future in concurrent.futures.as_completed(futures):
+                    success, message, content = future.result()
+                    click.echo(message)
+                    if success and content:
+                        all_contents.append(content)
+                        processed_count += 1
 
-        # Force garbage collection
-        gc.collect()
-        progress = (processed_count / total_files) * 100
-        click.echo(f"📊 Progress: {processed_count}/{total_files} ({progress:.1f}%)")
+            gc.collect()
+            progress = (processed_count / total_files) * 100
+            click.echo(f"📊 Progress: {processed_count}/{total_files} ({progress:.1f}%)")
 
-    # Generate directory index
-    click.echo("\n📋 Generating directory index...")
-    generate_index(repo_path, output_dir, repo_name,
-                   files_to_process, output_format)
+        # Write all content to single file
+        output_file = os.path.join(output_dir, f"{repo_name}_all.md")
+        click.echo(f"\n💾 Writing to single file: {output_file}")
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(f"# {repo_name} - Complete Source Code\n\n")
+            f.write(f"> Generated: {total_files} files, {processed_count} successfully processed\n\n")
+            f.write("---\n\n")
+            f.writelines(all_contents)
+
+        click.echo(f"✅ Single file generated: {output_file}")
+
+    else:
+        # 原有的多文件模式
+        click.echo(
+            f"\n📄 Starting file processing ({batch_size} files per batch, {MAX_WORKERS} threads parallel, output {output_format} format)...")
+
+        # Create partial function, fix common parameters
+        process_func = partial(
+            process_single_file,
+            repo_root=repo_path,
+            output_dir=output_dir,
+            formatter=formatter,
+            output_format=output_format
+        )
+
+        for i in range(0, total_files, batch_size):
+            # Check memory usage
+            wait_for_memory()
+
+            # Get current batch files
+            batch_files = files_to_process[i:i+batch_size]
+            batch_num = i // batch_size + 1
+            click.echo(f"\n📦 Processing batch {batch_num} ({len(batch_files)} files total)")
+
+            # Use thread pool to process current batch files in parallel
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                # Submit all tasks
+                futures = [executor.submit(process_func, file_path)
+                           for file_path in batch_files]
+
+                # Process results
+                for future in concurrent.futures.as_completed(futures):
+                    success, message = future.result()
+                    click.echo(message)
+                    if success:
+                        processed_count += 1
+
+            # Force garbage collection
+            gc.collect()
+            progress = (processed_count / total_files) * 100
+            click.echo(f"📊 Progress: {processed_count}/{total_files} ({progress:.1f}%)")
+
+        # Generate directory index
+        click.echo("\n📋 Generating directory index...")
+        generate_index(repo_path, output_dir, repo_name,
+                       files_to_process, output_format)
 
     # Completion message
     click.echo(f"\n🎉 All processing completed!")
     click.echo(f"📌 Output directory: {os.path.abspath(output_dir)}")
-    index_filename = "index.html" if output_format == 'html' else "index.md"
-    click.echo(
-        f"🌐 Index file: file://{os.path.abspath(os.path.join(output_dir, index_filename))}")
+
+    if single_file:
+        output_file = os.path.join(output_dir, f"{repo_name}_all.md")
+        click.echo(f"📄 Output file: file://{os.path.abspath(output_file)}")
+    else:
+        index_filename = "index.html" if output_format == 'html' else "index.md"
+        click.echo(
+            f"🌐 Index file: file://{os.path.abspath(os.path.join(output_dir, index_filename))}")
 
 
 # Initialize Jinja2 template environment (only needed for HTML format)
