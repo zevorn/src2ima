@@ -200,7 +200,7 @@ def process_single_file_to_content(file_path, repo_root, formatter, output_forma
         file_ext = ext.lstrip('.') if ext else 'txt'
 
         if ext == ".md":
-            final_content = f"# {rel_path}\n\n{content}\n\n---\n\n"
+            final_content = f"## {rel_path}\n\n{content}\n\n---\n\n"
         else:
             # Generate Markdown code block
             try:
@@ -215,7 +215,7 @@ def process_single_file_to_content(file_path, repo_root, formatter, output_forma
 
             # Escape backticks in code
             escaped_content = content.replace('`', '\\`')
-            final_content = f"# {rel_path}\n\n```{lexer_name}\n{escaped_content}\n```\n\n---\n\n"
+            final_content = f"## {rel_path}\n\n```{lexer_name}\n{escaped_content}\n```\n\n---\n\n"
 
         return (True, f"🟢 Processed: {rel_path}", final_content)
 
@@ -296,7 +296,7 @@ def process_single_file(file_path, repo_root, output_dir, formatter, output_form
         else:  # output_format == 'md'
             if ext == ".md":
                 # Markdown file preserves original extension, add .md suffix
-                final_content = f"# {rel_path}\n\n{content}"
+                final_content = f"## {rel_path}\n\n{content}"
             else:
                 # Manually generate Markdown code blocks
                 try:
@@ -312,7 +312,7 @@ def process_single_file(file_path, repo_root, output_dir, formatter, output_form
 
                 # Escape backticks in code
                 escaped_content = content.replace('`', '\\`')
-                final_content = f"# {rel_path}\n\n``` {lexer_name}\n{escaped_content}\n```\n"
+                final_content = f"## {rel_path}\n\n``` {lexer_name}\n{escaped_content}\n```\n"
 
         # Write output file
         with open(output_path, "w", encoding="utf-8") as f:
