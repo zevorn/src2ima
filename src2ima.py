@@ -458,7 +458,8 @@ def generate_index(repo_root, output_dir, repo_name, files_to_process, output_fo
 @click.option("--max-depth", default=MAX_DIRECTORY_DEPTH, type=int,
               help=f"Maximum directory depth, beyond which will be flattened, default {MAX_DIRECTORY_DEPTH}")
 @click.option("--single-file", is_flag=True, help="Merge all code into a single Markdown file")
-def main(local_repo, output_dir, output_format, ignore, highlight_theme, batch_size, max_workers, max_file_size, max_depth, single_file):
+@click.option("--force", "-f", is_flag=True, help="Force delete output directory without confirmation")
+def main(local_repo, output_dir, output_format, ignore, highlight_theme, batch_size, max_workers, max_file_size, max_depth, single_file, force):
     """Multi-threaded batch processing source code conversion tool, supports limiting maximum directory depth"""
     # Global configuration update
     global HIGHLIGHT_THEME, IGNORE_PATTERNS, BATCH_SIZE, MAX_FILE_SIZE, MAX_WORKERS, MAX_DIRECTORY_DEPTH
@@ -471,9 +472,9 @@ def main(local_repo, output_dir, output_format, ignore, highlight_theme, batch_s
     MAX_DIRECTORY_DEPTH = max_depth
 
     # 单文件模式下强制使用 Markdown 格式
-    # if single_file and output_format != 'md':
-    #     click.echo("⚠️  Single file mode only supports Markdown format, automatically switching to md")
-    #     output_format = 'md'
+    if single_file and output_format != 'md':
+        click.echo("⚠️  Single file mode only supports Markdown format, automatically switching to md")
+        output_format = 'md'
 
     click.echo(
         f"🔧 Configuration: Process {batch_size} files per batch, using {MAX_WORKERS} worker threads, maximum directory depth {MAX_DIRECTORY_DEPTH}")
@@ -490,8 +491,15 @@ def main(local_repo, output_dir, output_format, ignore, highlight_theme, batch_s
 
     # Prepare output directory
     if os.path.exists(output_dir):
-        click.echo(f"🧹 Cleaning old output directory: {output_dir}")
-        shutil.rmtree(output_dir, ignore_errors=True)
+        if force:
+            click.echo(f"🧹 Force cleaning old output directory: {output_dir}")
+            shutil.rmtree(output_dir, ignore_errors=True)
+        elif click.confirm(f"⚠️  Output directory already exists: {output_dir}\nDo you want to delete it and continue?"):
+            click.echo(f"🧹 Cleaning old output directory: {output_dir}")
+            shutil.rmtree(output_dir, ignore_errors=True)
+        else:
+            click.echo("❌ Operation cancelled by user")
+            return
     os.makedirs(output_dir, exist_ok=True)
 
     # Collect all files to process

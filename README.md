@@ -56,6 +56,7 @@ Options:
   --max-file-size INTEGER        Maximum file size to skip (MB), default 10
   --max-depth INTEGER            Maximum directory depth, beyond which will be flattened, default 5
   --single-file                  Merge all code into a single Markdown file
+  --force                        Force delete output directory without confirmation
   --help                         Show this message and exit.
 ```
 
@@ -82,6 +83,12 @@ Options:
    python src2ima.py --local-repo ../my-project --single-file -o ./output
    ```
    This will generate a file named `<repo_name>_all.md` containing all source code files merged together.
+
+5. Force delete output directory without confirmation (useful for automation):
+   ```bash
+   python src2ima.py --local-repo ../my-project --force
+   ```
+   This will skip the deletion confirmation prompt and directly clean the output directory if it exists.
 
 
 ## Notes
