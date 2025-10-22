@@ -55,6 +55,7 @@ Options:
   --max-workers INTEGER          Maximum worker threads, default automatically determined by CPU cores
   --max-file-size INTEGER        Maximum file size to skip (MB), default 10
   --max-depth INTEGER            Maximum directory depth, beyond which will be flattened, default 5
+  --single-file                  Merge all code into a single Markdown file
   --help                         Show this message and exit.
 ```
 
@@ -76,6 +77,12 @@ Options:
    python src2ima.py --local-repo ../my-repo --max-depth 3 --max-file-size 5
    ```
 
+4. Merge all code into a single **Markdown** file:
+   ```bash
+   python src2ima.py --local-repo ../my-project --single-file -o ./output
+   ```
+   This will generate a file named `<repo_name>_all.md` containing all source code files merged together.
+
 
 ## Notes
 
@@ -83,3 +90,4 @@ Options:
 - Overly long file paths will be automatically shortened to avoid system limitations
 - An index file (`index.md` or `index.html`) will be generated in the output directory for easy navigation
 - Memory usage is monitored during processing to prevent excessive resource consumption
+- If you use the option to designate the output directory, this path will be removed first! Be careful!
